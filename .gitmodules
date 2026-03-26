@@ -1,0 +1,3 @@
+[submodule "FEX"]
+	path = FEX
+	url = https://github.com/FEX-Emu/FEX.git

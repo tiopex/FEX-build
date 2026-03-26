@@ -1,0 +1,136 @@
+name: Build FEX
+
+on:
+  push:
+    tags:
+      - "FEX*"
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build FEX (ARM64)
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install dependencies
+        run: |
+          sudo dpkg --add-architecture amd64
+          sudo dpkg --add-architecture i386
+          sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: http://ports.ubuntu.com/ubuntu-ports
+          Suites: noble noble-updates noble-backports noble-security
+          Components: main restricted universe multiverse
+          Architectures: arm64 armhf
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: http://archive.ubuntu.com/ubuntu
+          Suites: noble noble-updates noble-backports noble-security
+          Components: main restricted universe multiverse
+          Architectures: amd64 i386
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            pkgconf \
+            pkg-config \
+            clang \
+            llvm \
+            lld \
+            binfmt-support \
+            libssl-dev \
+            python3-setuptools \
+            python3-clang \
+            nasm \
+            squashfs-tools \
+            squashfuse \
+            libc-bin \
+            libc6-dev-i386-amd64-cross \
+            libclang-dev \
+            libdrm-dev \
+            libxcb-present-dev \
+            libxcb-dri2-0-dev \
+            libxcb-dri3-dev \
+            libxcb-glx0-dev \
+            libxcb-shm0-dev \
+            libxshmfence-dev \
+            libstdc++-12-dev-i386-cross \
+            libstdc++-12-dev-amd64-cross \
+            libstdc++-12-dev-arm64-cross \
+            qt6-declarative-dev \
+            qml6-module-qtquick \
+            qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts \
+            qml6-module-qtquick-window \
+            qml6-module-qtqml \
+            g++-x86-64-linux-gnu \
+            g++-i686-linux-gnu \
+            libc6-dev-i386-cross \
+            libwayland-dev:amd64 \
+            libasound2-dev:amd64 \
+            libxrandr-dev:amd64 \
+            libx11-dev:amd64 \
+            libxext-dev:amd64 \
+            libwayland-dev:amd64 \
+            libasound2-dev:amd64 \
+            libxrandr-dev:amd64 \
+            libx11-dev:amd64 \
+            libxext-dev:amd64 \
+            libegl-dev:amd64 \
+            libegl-dev:i386 \
+            libgles-dev:amd64 \
+            libgles-dev:i386 \
+            libgl-dev:amd64 \
+            libgl-dev:i386
+
+
+      - name: Configure CMake
+        run: |
+          cd FEX
+            CC=clang CXX=clang++ cmake -S . -B build \
+            -DCMAKE_INSTALL_PREFIX=usr \
+            -DUSE_LINKER=lld \
+            -DENABLE_LTO=False \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=False \
+            -DENABLE_ASSERTIONS=False \
+            -DBUILD_THUNKS=True \
+            -DCMAKE_C_FLAGS_RELEASE="-O2 -march=armv9-a+fp16+crypto+i8mm+bf16+memtag+sm4+sha3+nosve" \
+            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -march=armv9-a+fp16+crypto+i8mm+bf16+memtag+sm4+sha3+nosve" \
+            -G Ninja
+
+      - name: Build
+        run: |
+          cd FEX
+          cmake --build build --parallel $(nproc)
+          cmake --install build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: fex-arm64-build
+          path: |
+            FEX/usr/
+          retention-days: 7
+          
+      - name: Create tarball
+        if: github.ref_type == 'tag'
+        run: |
+          cd FEX
+          tar -czf ${{ github.ref_name }}.tar.gz --transform='s|^|${{ github.ref_name }}/|' usr
+             
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref_type == 'tag'
+        with:
+          files: |
+            FEX/${{ github.ref_name }}.tar.gz       
